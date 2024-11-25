@@ -1,9 +1,10 @@
 __pycache__/
-*.py[cod]
-*$py.class
-build/
-devel/
-logs/
-.catkin_workspace
+*.pyc
+*.pyo
+.env
+/logs/*
 *.log
-*.csv
+.vscode/
+.idea/
+/recordings/*
+/config/sensitive/*
