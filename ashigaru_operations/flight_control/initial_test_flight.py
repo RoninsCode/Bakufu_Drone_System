@@ -41,7 +41,7 @@ class AshigaruFlightController:
         """Startet das Telemetrie-Logging-System"""
         try:
             script_dir = os.path.dirname(os.path.realpath(__file__))
-            log_script = os.path.join(script_dir, 'telemetrie_logging.py')
+            log_script = os.path.join(script_dir, 'home/yekta/bakufu_drone_system/ashigaru_operations/sensor_management/telemetrie_logging.py')
             self.logger_process = subprocess.Popen(['python3', log_script])
             rospy.loginfo("Telemetrie-System aktiviert")
         except Exception as e:

@@ -30,6 +30,17 @@ class AshigaruTelemetryLogger:
             rospy.logerr(f"ROS-Node-Initialisierung fehlgeschlagen: {e}")
             raise
 
+    def _initialize_ros_node(self):
+        try:
+            rospy.init_node('ashigaru_telemetry', anonymous=True)
+            script_dir = os.path.dirname(os.path.realpath(__file__))
+            monitor_script = os.path.join(script_dir, '/home/yekta/bakufu_drone_system/shogunate_command/edo_monitor/flight_monitor.py')
+            self.monitor_process = subprocess.Popen(['python3', monitor_script])
+            rospy.loginfo("Ashigaru Telemetrie-System und Flight Monitor initialisiert")
+        except Exception as e:
+            rospy.logerr(f"Initialisierung fehlgeschlagen: {e}")
+            raise
+
     def _setup_recording_directory(self):
         """Erstellt und konfiguriert das Aufzeichnungsverzeichnis"""
         try:
@@ -168,6 +179,8 @@ class AshigaruTelemetryLogger:
             self.cleanup()
 
     def cleanup(self):
+        if hasattr(self, 'monitor_process'):
+            self.monitor_process.terminate()
         """Aufräumen und Ressourcen freigeben"""
         if self.video_writer is not None:
             self.video_writer.release()
