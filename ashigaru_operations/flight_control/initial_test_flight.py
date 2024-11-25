@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+#im Verzeichnis: Bakufu_Drone_System/ashigaru_operations/flight_control
 
 import rospy
 import mavros
@@ -10,152 +11,219 @@ import time
 import os
 import subprocess
 
-
-class DroneTest:
+class AshigaruFlightController:
+    """
+    Ashigaru Flight Control System
+    Hauptklasse für die grundlegende Flugsteuerung und Mission Control.
+    """
     def __init__(self):
-        rospy.init_node('drone_test_node')
+        rospy.init_node('ashigaru_flight_control')
 
+        # State Management
         self.current_state = State()
+        self._initialize_services()
+        self._initialize_logger()
+        self._setup_ros_interface()
+        self._initialize_flight_parameters()
 
-        # Warte auf die Services
-        rospy.loginfo("Warte auf Services...")
+    def _initialize_services(self):
+        """Initialisiert die benötigten ROS-Services"""
         try:
+            rospy.loginfo("Initialisiere Ashigaru Services...")
             rospy.wait_for_service("/mavros/cmd/arming", timeout=10)
             rospy.wait_for_service("/mavros/set_mode", timeout=10)
-        except rospy.ROSException:
-            rospy.logerr("Services nicht verfügbar!")
-            return
+            rospy.loginfo("Services erfolgreich initialisiert")
+        except rospy.ROSException as e:
+            rospy.logerr(f"Service-Initialisierung fehlgeschlagen: {e}")
+            raise
 
-        # Starte Logger
+    def _initialize_logger(self):
+        """Startet das Telemetrie-Logging-System"""
         try:
             script_dir = os.path.dirname(os.path.realpath(__file__))
             log_script = os.path.join(script_dir, 'telemetrie_logging.py')
             self.logger_process = subprocess.Popen(['python3', log_script])
-            rospy.loginfo("Telemetrie-Logger gestartet")
+            rospy.loginfo("Telemetrie-System aktiviert")
         except Exception as e:
-            rospy.logerr(f"Fehler beim Starten des Loggers: {e}")
+            rospy.logerr(f"Telemetrie-System-Fehler: {e}")
+            raise
 
-        self.state_sub = rospy.Subscriber("mavros/state", State, self.state_cb)
-        self.local_pos_pub = rospy.Publisher("mavros/setpoint_position/local", PoseStamped, queue_size=10)
-        self.arming_client = rospy.ServiceProxy("mavros/cmd/arming", CommandBool)
-        self.set_mode_client = rospy.ServiceProxy("mavros/set_mode", SetMode)
+    def _setup_ros_interface(self):
+        """Initialisiert die ROS-Kommunikationsschnittstellen"""
+        self.state_sub = rospy.Subscriber(
+            "mavros/state",
+            State,
+            self._state_callback
+        )
+        self.local_pos_pub = rospy.Publisher(
+            "mavros/setpoint_position/local",
+            PoseStamped,
+            queue_size=10
+        )
+        self.arming_client = rospy.ServiceProxy(
+            "mavros/cmd/arming",
+            CommandBool
+        )
+        self.set_mode_client = rospy.ServiceProxy(
+            "mavros/set_mode",
+            SetMode
+        )
 
+    def _initialize_flight_parameters(self):
+        """Initialisiert die Flugparameter"""
         self.pose = PoseStamped()
         self.pose.pose.position.x = 0
         self.pose.pose.position.y = 0
         self.pose.pose.position.z = 2
 
     def cleanup(self):
-        """Aufräumen beim Beenden"""
+        """System-Cleanup und Ressourcenfreigabe"""
         if hasattr(self, 'logger_process'):
             self.logger_process.terminate()
-            rospy.loginfo("Telemetrie-Logger beendet")
+            rospy.loginfo("Telemetrie-System deaktiviert")
 
-    def state_cb(self, msg):
+    def _state_callback(self, msg):
+        """Callback für Statusaktualisierungen"""
         self.current_state = msg
 
-    def wait_for_connection(self):
-        rospy.loginfo("Warte auf MAVROS Verbindung...")
-        for i in range(50):  # Timeout nach 10 Sekunden
+    def establish_connection(self):
+        """
+        Stellt die MAVROS-Verbindung her
+        Returns:
+            bool: True bei erfolgreicher Verbindung
+        """
+        rospy.loginfo("Initialisiere MAVROS-Verbindung...")
+        for _ in range(50):
             if self.current_state.connected:
-                rospy.loginfo("MAVROS verbunden!")
+                rospy.loginfo("MAVROS-Verbindung hergestellt")
                 return True
             rospy.sleep(0.2)
-        rospy.logerr("Keine Verbindung zu MAVROS!")
+        rospy.logerr("MAVROS-Verbindung fehlgeschlagen")
         return False
 
-    def arm_drone(self):
-        rospy.loginfo("Versuche Drohne zu armen...")
+    def arm_system(self):
+        """
+        Aktiviert die Systeme der Drohne
+        Returns:
+            bool: True bei erfolgreichem Arming
+        """
+        rospy.loginfo("Systemaktivierung...")
         arm_cmd = CommandBoolRequest()
         arm_cmd.value = True
 
-        for i in range(5):  # 5 Versuche
+        for _ in range(5):
             if self.arming_client.call(arm_cmd).success:
-                rospy.loginfo("Drohne erfolgreich gearmt!")
+                rospy.loginfo("System erfolgreich aktiviert")
                 return True
             rospy.sleep(1)
-        rospy.logerr("Arming fehlgeschlagen!")
+        rospy.logerr("Systemaktivierung fehlgeschlagen")
         return False
 
-    def set_offboard_mode(self):
-        rospy.loginfo("Wechsle in OFFBOARD Mode...")
+    def engage_offboard_control(self):
+        """
+        Aktiviert den OFFBOARD-Kontrollmodus
+        Returns:
+            bool: True bei erfolgreicher Aktivierung
+        """
+        rospy.loginfo("Aktiviere OFFBOARD-Kontrolle...")
         offb_set_mode = SetModeRequest()
         offb_set_mode.custom_mode = 'OFFBOARD'
 
-        # Sende einige Setpoints bevor Switch to OFFBOARD
-        for i in range(50):
+        # Setpoint-Vorbereitung
+        for _ in range(50):
             self.local_pos_pub.publish(self.pose)
             rospy.sleep(0.1)
 
-        for i in range(5):  # 5 Versuche
+        for _ in range(5):
             if self.set_mode_client.call(offb_set_mode).mode_sent:
-                rospy.loginfo("OFFBOARD Mode aktiviert!")
+                rospy.loginfo("OFFBOARD-Kontrolle aktiviert")
                 return True
             rospy.sleep(1)
-        rospy.logerr("OFFBOARD Mode Aktivierung fehlgeschlagen!")
+        rospy.logerr("OFFBOARD-Aktivierung fehlgeschlagen")
         return False
 
-    def test_flight(self):
+    def execute_mission(self):
+        """
+        Führt die Hauptflugroutine aus
+        Returns:
+            bool: True bei erfolgreicher Mission
+        """
         try:
-            if not self.wait_for_connection():
-                return
+            if not all([
+                self.establish_connection(),
+                self.engage_offboard_control(),
+                self.arm_system()
+            ]):
+                return False
 
-            if not self.set_offboard_mode():
-                return
+            rospy.loginfo("Starte Ashigaru-Testflug...")
 
-            if not self.arm_drone():
-                return
+            # Aufstiegsphase
+            self._execute_ascent()
 
-            rospy.loginfo("Starte Testflug...")
+            # Wegpunkt-Navigation
+            self._execute_waypoint_navigation()
 
-            # Steige auf
-            rospy.loginfo("Steige auf...")
+            # Landephase
+            self._execute_landing()
+
+            return True
+
+        except Exception as e:
+            rospy.logerr(f"Missionsfehler: {e}")
+            return False
+        finally:
+            self.cleanup()
+
+    def _execute_ascent(self):
+        """Führt die Aufstiegsphase aus"""
+        rospy.loginfo("Steigphase eingeleitet...")
+        start_time = rospy.Time.now()
+        while (rospy.Time.now() - start_time) < rospy.Duration(5.0):
+            self.local_pos_pub.publish(self.pose)
+            rospy.sleep(0.1)
+
+    def _execute_waypoint_navigation(self):
+        """Führt die Wegpunkt-Navigation aus"""
+        waypoints = [
+            (2, 0, 2),  # Vorwärts
+            (2, 2, 2),  # Rechts
+            (0, 2, 2),  # Rückwärts
+            (0, 0, 2)   # Links
+        ]
+
+        for wp in waypoints:
+            rospy.loginfo(f"Navigation zu Wegpunkt: {wp}")
+            self.pose.pose.position.x = wp[0]
+            self.pose.pose.position.y = wp[1]
+            self.pose.pose.position.z = wp[2]
+
             start_time = rospy.Time.now()
             while (rospy.Time.now() - start_time) < rospy.Duration(5.0):
                 self.local_pos_pub.publish(self.pose)
                 rospy.sleep(0.1)
 
-            # Fliege Quadrat
-            waypoints = [
-                (2, 0, 2),
-                (2, 2, 2),
-                (0, 2, 2),
-                (0, 0, 2)
-            ]
+    def _execute_landing(self):
+        """Führt die Landephase aus"""
+        rospy.loginfo("Leite Landung ein...")
+        self.pose.pose.position.x = 0
+        self.pose.pose.position.y = 0
+        self.pose.pose.position.z = 0
 
-            for wp in waypoints:
-                rospy.loginfo(f"Fliege zu Position: {wp}")
-                self.pose.pose.position.x = wp[0]
-                self.pose.pose.position.y = wp[1]
-                self.pose.pose.position.z = wp[2]
+        for _ in range(50):
+            self.local_pos_pub.publish(self.pose)
+            rospy.sleep(0.1)
 
-                start_time = rospy.Time.now()
-                while (rospy.Time.now() - start_time) < rospy.Duration(5.0):
-                    self.local_pos_pub.publish(self.pose)
-                    rospy.sleep(0.1)
-
-            # Landung
-            rospy.loginfo("Kehre zur Landung zurück")
-            self.pose.pose.position.x = 0
-            self.pose.pose.position.y = 0
-            self.pose.pose.position.z = 0
-
-            for i in range(50):
-                self.local_pos_pub.publish(self.pose)
-                rospy.sleep(0.1)
-
-            land_set_mode = SetModeRequest()
-            land_set_mode.custom_mode = 'AUTO.LAND'
-            if self.set_mode_client.call(land_set_mode).mode_sent:
-                rospy.loginfo("Landung eingeleitet")
-        finally:
-            self.cleanup()
+        land_set_mode = SetModeRequest()
+        land_set_mode.custom_mode = 'AUTO.LAND'
+        if self.set_mode_client.call(land_set_mode).mode_sent:
+            rospy.loginfo("Landephase aktiviert")
 
 
 if __name__ == "__main__":
     try:
-        drone = DroneTest()
-        drone.test_flight()
+        controller = AshigaruFlightController()
+        controller.execute_mission()
     except rospy.ROSInterruptException:
-        if hasattr(drone, 'cleanup'):
-            drone.cleanup()
+        if hasattr(controller, 'cleanup'):
+            controller.cleanup()

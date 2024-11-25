@@ -1,104 +1,184 @@
 #!/usr/bin/env python3
+#Verzeichnis Bakufu_Drone_System/ashigaru_operations/sensor_managment
 
 import rospy
-from sensor_msgs.msg import Image, NavSatFix, Imu
-from mavros_msgs.msg import State, BatteryStatus
-from geometry_msgs.msg import PoseStamped, TwistStamped
-from nav_msgs.msg import Odometry
-import json
-import csv
-from datetime import datetime
+from sensor_msgs.msg import Image
+from cv_bridge import CvBridge
+import cv2
 import os
+from datetime import datetime
 
-class TelemetryLogger:
+class AshigaruTelemetryLogger:
+    """
+    Ashigaru Telemetrie-System
+    Verantwortlich für die Aufzeichnung und Speicherung von Flugdaten und Videostreams.
+    """
     def __init__(self):
-        rospy.init_node('telemetry_logger')
+        self._initialize_ros_node()
+        self._setup_recording_directory()
+        self._initialize_cv_bridge()
+        self._initialize_video_writer()
+        self._setup_subscribers()
+        self._initialize_state_variables()
 
-        # Erstelle Aufnahmeordner
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        self.log_dir = os.path.join(os.path.expanduser('~'),
-                                   'drone_ai_project/recordings', timestamp)
-        os.makedirs(self.log_dir, exist_ok=True)
+    def _initialize_ros_node(self):
+        """Initialisiert den ROS-Node"""
+        try:
+            rospy.init_node('ashigaru_telemetry', anonymous=True)
+            rospy.loginfo("Ashigaru Telemetrie-System initialisiert")
+        except Exception as e:
+            rospy.logerr(f"ROS-Node-Initialisierung fehlgeschlagen: {e}")
+            raise
 
-        # Öffne Log-Dateien
-        self.flight_data = open(os.path.join(self.log_dir, 'flight_data.csv'), 'w')
-        self.flight_csv = csv.writer(self.flight_data)
-        self.flight_csv.writerow(['timestamp', 'x', 'y', 'z', 'roll', 'pitch', 'yaw',
-                                'vx', 'vy', 'vz', 'battery', 'mode'])
+    def _setup_recording_directory(self):
+        """Erstellt und konfiguriert das Aufzeichnungsverzeichnis"""
+        try:
+            self.recording_dir = os.path.join(
+                os.path.expanduser('~'),
+                'bakufu_drone_system/telemetry_data',
+                datetime.now().strftime('%Y%m%d_%H%M%S')
+            )
+            os.makedirs(self.recording_dir, exist_ok=True)
+            rospy.loginfo(f"Telemetrie-Verzeichnis erstellt: {self.recording_dir}")
+        except Exception as e:
+            rospy.logerr(f"Verzeichniserstellung fehlgeschlagen: {e}")
+            raise
 
-        # Subscriber für verschiedene Telemetriedaten
-        self.pose_sub = rospy.Subscriber('mavros/local_position/pose',
-                                        PoseStamped, self.pose_callback)
-        self.vel_sub = rospy.Subscriber('mavros/local_position/velocity_local',
-                                       TwistStamped, self.velocity_callback)
-        self.state_sub = rospy.Subscriber('mavros/state',
-                                         State, self.state_callback)
-        self.battery_sub = rospy.Subscriber('mavros/battery',
-                                          BatteryStatus, self.battery_callback)
-        self.gps_sub = rospy.Subscriber('mavros/global_position/global',
-                                       NavSatFix, self.gps_callback)
-        self.imu_sub = rospy.Subscriber('mavros/imu/data',
-                                       Imu, self.imu_callback)
+    def _initialize_cv_bridge(self):
+        """Initialisiert die OpenCV Bridge"""
+        try:
+            self.bridge = CvBridge()
+            rospy.loginfo("CV Bridge initialisiert")
+        except Exception as e:
+            rospy.logerr(f"CV Bridge Initialisierung fehlgeschlagen: {e}")
+            raise
 
-        # Aktuelle Werte
-        self.current_pose = None
-        self.current_vel = None
-        self.current_state = None
-        self.current_battery = None
-        self.current_gps = None
-        self.current_imu = None
+    def _initialize_video_writer(self):
+        """Initialisiert den Video Writer"""
+        self.video_file = os.path.join(self.recording_dir, 'mission_recording.avi')
+        self.video_writer = None
+        self.frame_size = None
 
-    def pose_callback(self, msg):
-        self.current_pose = msg
-        self.write_telemetry()
+    def _setup_subscribers(self):
+        """Richtet die ROS-Subscriber ein"""
+        try:
+            rospy.loginfo("Überprüfe verfügbare Topics...")
+            topics = rospy.get_published_topics()
+            for topic in topics:
+                rospy.loginfo(f"Gefunden: {topic}")
 
-    def velocity_callback(self, msg):
-        self.current_vel = msg
+            self.image_sub = rospy.Subscriber(
+                "/iris/camera/image_raw",
+                Image,
+                self._image_callback
+            )
+            rospy.loginfo("Bildempfang aktiviert")
+        except Exception as e:
+            rospy.logerr(f"Subscriber-Setup fehlgeschlagen: {e}")
+            raise
 
-    def state_callback(self, msg):
-        self.current_state = msg
+    def _initialize_state_variables(self):
+        """Initialisiert die Statusvariablen"""
+        self.frame_count = 0
+        self.received_first_frame = False
+        self.is_recording = True
 
-    def battery_callback(self, msg):
-        self.current_battery = msg
+    def _image_callback(self, msg):
+        """
+        Callback für eingehende Bildframes
+        Args:
+            msg: ROS Image Message
+        """
+        try:
+            if not self.received_first_frame:
+                rospy.loginfo("Erstes Bild empfangen")
+                self.received_first_frame = True
 
-    def gps_callback(self, msg):
-        self.current_gps = msg
+            cv_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
+            self._process_frame(cv_image)
 
-    def imu_callback(self, msg):
-        self.current_imu = msg
+        except Exception as e:
+            rospy.logerr(f"Bildverarbeitung fehlgeschlagen: {e}")
+            self._log_frame_error(msg)
 
-    def write_telemetry(self):
-        if all([self.current_pose, self.current_vel,
-                self.current_state, self.current_battery]):
-            # Schreibe alle Daten in CSV
-            self.flight_csv.writerow([
-                rospy.Time.now(),
-                self.current_pose.pose.position.x,
-                self.current_pose.pose.position.y,
-                self.current_pose.pose.position.z,
-                # Hier würden noch die Orientierungswerte aus den Quaternionen kommen
-                self.current_vel.twist.linear.x,
-                self.current_vel.twist.linear.y,
-                self.current_vel.twist.linear.z,
-                self.current_battery.percentage,
-                self.current_state.mode
-            ])
-            self.flight_data.flush()  # Sicheres Schreiben
+    def _process_frame(self, cv_image):
+        """
+        Verarbeitet und speichert einen Bildframe
+        Args:
+            cv_image: OpenCV Bildframe
+        """
+        if self.video_writer is None:
+            self._initialize_frame_writer(cv_image)
 
-    def shutdown(self):
-        """Cleanup beim Beenden"""
-        self.flight_data.close()
-        rospy.loginfo("Telemetrie-Logger beendet")
+        if self.video_writer and self.is_recording:
+            self.video_writer.write(cv_image)
+            self.frame_count += 1
+            self._log_frame_status()
 
-def main():
-    try:
-        logger = TelemetryLogger()
-        rospy.spin()
-    except rospy.ROSInterruptException:
-        pass
-    finally:
-        if 'logger' in locals():
-            logger.shutdown()
+    def _initialize_frame_writer(self, first_frame):
+        """
+        Initialisiert den Frame Writer mit dem ersten Frame
+        Args:
+            first_frame: Erster OpenCV Bildframe
+        """
+        try:
+            self.frame_size = (first_frame.shape[1], first_frame.shape[0])
+            rospy.loginfo(f"Initialisiere VideoWriter mit Format: {self.frame_size}")
+
+            self.video_writer = cv2.VideoWriter(
+                self.video_file,
+                cv2.VideoWriter_fourcc(*'XVID'),
+                30,  # FPS
+                self.frame_size,
+                isColor=True
+            )
+
+            if not self.video_writer.isOpened():
+                raise Exception("VideoWriter konnte nicht geöffnet werden")
+
+            rospy.loginfo(f"Videoaufzeichnung gestartet: {self.video_file}")
+
+        except Exception as e:
+            rospy.logerr(f"VideoWriter Initialisierung fehlgeschlagen: {e}")
+            raise
+
+    def _log_frame_status(self):
+        """Loggt den Status der Frameaufzeichnung"""
+        if self.frame_count % 30 == 0:  # Log alle 30 Frames
+            rospy.loginfo(f"Aufgezeichnete Frames: {self.frame_count}")
+
+    def _log_frame_error(self, msg):
+        """
+        Loggt Details bei Frame-Fehlern
+        Args:
+            msg: Problematische ROS-Message
+        """
+        rospy.logerr(f"Frame Info - Typ: {type(msg)}")
+        rospy.logerr(f"Message Details: {msg._type}")
+
+    def run(self):
+        """Hauptausführungsschleife"""
+        rospy.loginfo(f"Ashigaru Telemetrie-System aktiv: {self.recording_dir}")
+        try:
+            rospy.spin()
+        except KeyboardInterrupt:
+            self.cleanup()
+        except Exception as e:
+            rospy.logerr(f"Unerwarteter Fehler: {e}")
+            self.cleanup()
+
+    def cleanup(self):
+        """Aufräumen und Ressourcen freigeben"""
+        if self.video_writer is not None:
+            self.video_writer.release()
+            rospy.loginfo(f"Aufzeichnung gespeichert: {self.video_file}")
+            rospy.loginfo(f"Gesamtanzahl Frames: {self.frame_count}")
+        rospy.loginfo("Ashigaru Telemetrie-System beendet")
+
 
 if __name__ == "__main__":
-    main()
+    try:
+        logger = AshigaruTelemetryLogger()
+        logger.run()
+    except rospy.ROSInterruptException:
+        pass
