@@ -13,28 +13,7 @@ Creating an autonomous flying assistant that can intelligently interact with its
 - Live flight status and position tracking
 - Emergency protocols and safety measures
 
-## 🛠 Technology Stack
 
-- **Operating System:** Ubuntu 20.04 LTS
-- **ROS:** Noetic
-- **Flight Control:** PX4-SITL & MAVROS
-- **Simulation:** Gazebo
-- **Programming Language:** Python 3
-- **Visualization:** Matplotlib, Tkinter
-
-## 📋 Prerequisites
-
-- Ubuntu 20.04 LTS
-- ROS Noetic
-- PX4-Autopilot
-- Gazebo Simulator
-- MAVROS
-- Python 3.8+
-- Required Python packages:
-  - rospy
-  - numpy
-  - matplotlib
-  - opencv-python
 
 🎯 Planned AI Integration
 
@@ -69,4 +48,3 @@ Adaptive behavior planning
 Authors
 - Yekta Celik - yekoo@hotmail.de
 
-Project Link: https://github.com/RoninsCode/Bakufu_Drone_System
