@@ -5,14 +5,13 @@ A sophisticated autonomous drone system aimed at creating an intelligent flying 
 ## 🎯 Vision
 Creating an autonomous flying assistant that can intelligently interact with its environment and users through advanced AI integration, computer vision, and natural language processing.
 
+# Coming Soon AI Integration
 
-# Planned AI Integration
+Reinforcement Learning
 
-# Reinforcement Learning
+Computer Vision
 
-# Computer Vision
-
-# Large Language Models
+Large Language Models
 
 Authors
 - Yekta Celik - service@envolate.de
